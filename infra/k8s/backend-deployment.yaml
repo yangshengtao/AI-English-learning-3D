@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: english-tutor-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: english-tutor-backend
+  template:
+    metadata:
+      labels:
+        app: english-tutor-backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/your-org/english-tutor-backend:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: ENV
+              value: "prod"
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: tutor-secrets
+                  key: jwt_secret
+            - name: ASR_PROVIDER
+              value: "deepgram"
+            - name: TTS_PROVIDER
+              value: "elevenlabs"
+            - name: LLM_PROVIDER
+              value: "openai"
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: english-tutor-backend
+spec:
+  selector:
+    app: english-tutor-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8000
