@@ -98,7 +98,8 @@ class SessionAgent:
                     payload={
                         "audioBase64": base64.b64encode(audio_bytes).decode("utf-8"),
                         "sampleRate": 24000,
-                        "format": "pcm16",
+                        "format": "wav",
+                        "mimeType": "audio/wav",
                     },
                 )
             )

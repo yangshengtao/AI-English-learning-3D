@@ -2,9 +2,17 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Button, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AvatarPanel } from "../components/AvatarPanel";
+import {
+  playAudioFromBase64,
+  prepareAudioSession,
+  requestMicrophonePermission,
+  speakFallback,
+  startRecording,
+  stopRecordingAndGetBase64,
+} from "../services/audioService";
 import { RealtimeClient, RealtimeEvent } from "../services/realtimeClient";
 
-const BACKEND_WS_URL = "ws://localhost:8000/v1/realtime/session";
+const BACKEND_WS_URL = "ws://127.0.0.1:8000/v1/realtime/session";
 const AVATAR_PAGE_URL = "https://example.com/avatar";
 
 export function SessionScreen() {
@@ -14,11 +22,13 @@ export function SessionScreen() {
   const [token, setToken] = useState("");
   const [typedText, setTypedText] = useState("");
   const [status, setStatus] = useState("disconnected");
+  const [isRecording, setIsRecording] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [agentReply, setAgentReply] = useState("");
   const [feedback, setFeedback] = useState("");
 
   useEffect(() => {
+    prepareAudioSession().catch(() => setStatus("audio session setup failed"));
     return () => realtimeClient.disconnect();
   }, [realtimeClient]);
 
@@ -44,12 +54,25 @@ export function SessionScreen() {
       return;
     }
     realtimeClient.connect(BACKEND_WS_URL, token.trim(), {
+      onOpen: () => {
+        setStatus("connected");
+        send("session.start", { mode: "free_talk" });
+      },
       onMessage: (event) => {
         if (event.type === "asr.partial" || event.type === "asr.final") {
           setTranscript(String(event.payload.text ?? ""));
         }
         if (event.type === "agent.text") {
-          setAgentReply(String(event.payload.text ?? ""));
+          const text = String(event.payload.text ?? "");
+          setAgentReply(text);
+          speakFallback(text);
+        }
+        if (event.type === "agent.audio") {
+          const base64 = String(event.payload.audioBase64 ?? "");
+          const mimeType = String(event.payload.mimeType ?? "audio/wav");
+          playAudioFromBase64(base64, mimeType).catch(() => {
+            // Keep UI flow resilient even when backend audio format mismatches.
+          });
         }
         if (event.type === "eval.feedback") {
           const score = Number(event.payload.pronunciationScore ?? 0);
@@ -60,8 +83,7 @@ export function SessionScreen() {
       onError: (error) => setStatus(`error: ${error}`),
       onClose: () => setStatus("closed"),
     });
-    setStatus("connected");
-    send("session.start", { mode: "free_talk" });
+    setStatus("connecting");
   };
 
   const submitText = () => {
@@ -72,10 +94,41 @@ export function SessionScreen() {
     setTypedText("");
   };
 
-  const mockVoiceTurn = () => {
-    // RN audio capture should be added with react-native-audio-recorder-player or Expo AV.
-    send("audio.chunk", { seq: 1, audioBase64: "ZmFrZV9jaHVuaw==", sampleRate: 16000, format: "pcm16" });
-    send("audio.commit", { lastSeq: 1 });
+  const startVoiceInput = async () => {
+    const granted = await requestMicrophonePermission();
+    if (!granted) {
+      setStatus("microphone permission denied");
+      return;
+    }
+    try {
+      await startRecording();
+      setIsRecording(true);
+      setStatus("recording");
+    } catch (error) {
+      setStatus(`recording start failed: ${String(error)}`);
+    }
+  };
+
+  const stopVoiceInput = async () => {
+    try {
+      const audioBase64 = await stopRecordingAndGetBase64();
+      setIsRecording(false);
+      if (!audioBase64) {
+        setStatus("recording empty");
+        return;
+      }
+      send("audio.chunk", {
+        seq: 1,
+        audioBase64,
+        sampleRate: 44100,
+        format: "m4a",
+      });
+      send("audio.commit", { lastSeq: 1 });
+      setStatus("voice turn sent");
+    } catch (error) {
+      setIsRecording(false);
+      setStatus(`recording stop failed: ${String(error)}`);
+    }
   };
 
   return (
@@ -88,7 +141,7 @@ export function SessionScreen() {
         <TextInput value={token} onChangeText={setToken} style={styles.input} placeholder="Paste token here" />
         <View style={styles.row}>
           <Button title="Connect" onPress={connect} />
-          <Button title="Mock Voice Turn" onPress={mockVoiceTurn} />
+          <Button title={isRecording ? "Stop Recording" : "Start Recording"} onPress={isRecording ? stopVoiceInput : startVoiceInput} />
         </View>
 
         <Text style={styles.label}>Text Fallback</Text>

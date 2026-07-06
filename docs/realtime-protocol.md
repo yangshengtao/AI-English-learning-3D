@@ -32,7 +32,7 @@ All websocket frames use JSON:
 - `session.start`
   - payload: `{ "mode": "free_talk|scenario|shadowing", "scenario": "optional" }`
 - `audio.chunk`
-  - payload: `{ "seq": 12, "audioBase64": "...", "sampleRate": 16000, "format": "pcm16" }`
+  - payload: `{ "seq": 12, "audioBase64": "...", "sampleRate": 44100, "format": "m4a" }`
 - `audio.commit`
   - payload: `{ "lastSeq": 42 }`
 - `session.input_text`
@@ -50,7 +50,7 @@ All websocket frames use JSON:
 - `agent.text`
   - payload: `{ "text": "Great. You can say: I'd like a coffee, please." }`
 - `agent.audio`
-  - payload: `{ "audioBase64": "...", "sampleRate": 24000, "format": "pcm16" }`
+  - payload: `{ "audioBase64": "...", "sampleRate": 24000, "format": "wav", "mimeType": "audio/wav" }`
 - `avatar.cue`
   - payload: `{ "visemeTimeline": [], "emotion": "encouraging" }`
 - `eval.feedback`

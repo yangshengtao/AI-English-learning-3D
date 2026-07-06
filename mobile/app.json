@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "AI English Learning",
+    "slug": "ai-english-learning",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.tony.aienglishlearning",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "This app needs microphone access for English speaking practice."
+      }
+    },
+    "android": {
+      "package": "com.tony.aienglishlearning",
+      "permissions": ["RECORD_AUDIO"]
+    }
+  }
+}

@@ -23,6 +23,12 @@ This repository now contains an implementation scaffold for a 1v1 digital-human 
 1. `cd infra`
 2. `docker compose up`
 
+### iOS App (first milestone)
+1. `cd mobile`
+2. `npm install`
+3. `npx expo prebuild -p ios`
+4. `npx expo run:ios`
+
 ## Suggested Skills/Agents for Next Phase
 - Optional now, useful when team scale grows:
   - CI babysit automation skill for PR/CI loops

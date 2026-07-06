@@ -7,6 +7,7 @@ export type RealtimeEvent = {
 };
 
 type RealtimeCallbacks = {
+  onOpen?: () => void;
   onMessage: (event: RealtimeEvent) => void;
   onError?: (error: string) => void;
   onClose?: () => void;
@@ -16,11 +17,12 @@ export class RealtimeClient {
   private ws: WebSocket | null = null;
 
   connect(url: string, token: string, callbacks: RealtimeCallbacks) {
-    this.ws = new WebSocket(url, undefined, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const urlWithToken = `${url}?token=${encodeURIComponent(token)}`;
+    this.ws = new WebSocket(urlWithToken);
+
+    this.ws.onopen = () => {
+      callbacks.onOpen?.();
+    };
 
     this.ws.onmessage = (message) => {
       try {
