@@ -7,10 +7,23 @@ from app.providers.base import LLMProvider
 
 SYSTEM_PROMPT = (
     "You are a friendly, encouraging 1-on-1 English speaking tutor for a non-native adult learner. "
-    "Reply in natural American English, keep it short (1-3 sentences), gently correct mistakes, "
-    "and end with a light follow-up question to keep the conversation going. "
-    "Current lesson mode: {mode}."
+    "Reply in natural American English, gently correct mistakes, and end with a light follow-up "
+    "question to keep the conversation going. Keep the whole reply very short: at most 2 short "
+    "sentences and under 200 characters total — this will be spoken aloud, so brevity matters more "
+    "than completeness. Current lesson mode: {mode}."
 )
+
+# `deepseek_model` (deepseek-v4-flash) is a reasoning model: DeepSeek bills its
+# internal chain-of-thought against the same `max_tokens` budget as the
+# visible reply, *before* it writes any visible content (see
+# `usage.completion_tokens_details.reasoning_tokens` in the raw response).
+# 200 was measured to be entirely consumed by reasoning alone on some turns,
+# leaving zero tokens left for the actual reply — DeepSeek returns
+# `finish_reason="length"` with completely empty `content` in that case
+# (this is the "Agent 显示的字段不全" bug). 800 leaves headroom for
+# reasoning *and* a full short reply; the system prompt above is what
+# actually keeps the visible reply short, not this ceiling.
+MAX_REPLY_TOKENS = 800
 
 
 def _is_placeholder_key(api_key: str) -> bool:
@@ -63,13 +76,19 @@ class DeepSeekLLMProvider(LLMProvider):
                     "model": settings.deepseek_model,
                     "messages": messages,
                     "temperature": 0.7,
-                    "max_tokens": 200,
+                    "max_tokens": MAX_REPLY_TOKENS,
                 },
             )
             response.raise_for_status()
             payload = response.json()
-            content = payload["choices"][0]["message"]["content"]
-            return str(content).strip()
+            content = str(payload["choices"][0]["message"]["content"]).strip()
+            if content:
+                return content
+            # Should be rare now that MAX_REPLY_TOKENS gives reasoning enough
+            # room, but if the model still burns the whole budget on
+            # reasoning and returns nothing, don't show a blank Agent reply.
+            finish_reason = payload["choices"][0].get("finish_reason", "unknown")
+            return f"[DeepSeek returned an empty reply (finish_reason={finish_reason})] Let's try again — {learner_text}"
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
             return f"[DeepSeek request failed: {exc}] Let's try again — {learner_text}"
 

@@ -144,6 +144,18 @@ Mac 查 IP：`ipconfig getifaddr en0`
 - **解决**：把 `DeepgramTTSProvider` 默认请求的编码从 `linear16`（未压缩 PCM）改成 `mp3`（压缩后同一句话大约只有 30KB，**约为原来的 1/8**），配置项是 `DEEPGRAM_TTS_ENCODING`（默认 `mp3`，需要更高音质或链路本身很快可以改回 `linear16`）。同步把 `agent.audio` 事件的 `format` 字段从原来硬编码的 `"pcm16"` 改成`self.tts.audio_format`（跟随实际使用的编码动态变化），移动端 `audioPlayer.ts` 也相应改造：`format` 是 `mp3`/`opus`/`aac`/`flac` 这类自带容器头的压缩格式时直接原样写文件播放，不再需要（也不能）手动拼 WAV 头；只有 `pcm16` 这种裸 PCM 才需要客户端自己拼 WAV 头。
 - **预防**：以后如果要给 TTS 换供应商或换编码格式，注意 `TTSProvider.audio_format` 这个属性必须和 `synthesize()` 实际返回的字节格式保持一致，客户端完全是按这个字段来决定"直接播放"还是"先拼 WAV 头"的，两边对不上会导致播放失败或者放出噪音。
 
+## Agent 回复的文字不全，TTS 播放也不完整（不是 ASR 的问题）
+
+- **现象**：Agent 文字回复看起来被截断（有时甚至整段是空的），语音播放也在句子中间戛然而止。容易怀疑是 ASR（学员说的话被截断），但 ASR 只负责把"学员的语音"转成文字喂给 LLM，跟"Agent 的回复文字/音频"是否完整完全无关——真正的原因在 LLM 和 TTS 这两段：
+  1. **LLM 侧（真正的主因，会导致回复整段是空的）**：`DEEPSEEK_MODEL=deepseek-v4-flash` 是一个"推理模型"，会先内部生成一段不可见的 reasoning（chain-of-thought），这段 reasoning 和最终可见的回复**共享同一个 `max_tokens` 预算**（响应里 `usage.completion_tokens_details.reasoning_tokens` 能看到具体消耗了多少）。之前 `max_tokens=200` 时，遇到复杂/矛盾一点的提示，200 个 token 经常被 reasoning **全部**吃掉，可见的 `content` 就是空字符串，`finish_reason="length"`——这时 Agent 显示的文字/播放的语音自然都是"不完整"甚至完全没有。
+  2. **TTS 侧（次要，只在回复偏长时触发）**：`AlibabaTTSProvider` 用的是阿里云"一句话合成"接口，官方文档写明**单次请求最多 300 字符，超过的部分会被服务端直接截断**，而且不保证在词/句边界截断，可能截得很难听。当时的 System Prompt 只写"1-3 sentences"，DeepSeek 实测回复经常在 300~400 字符左右，正好卡在这个坎上，播放到一半突然断掉。
+- **解决**（`backend/app/providers/llm_provider.py`、`backend/app/providers/tts_provider.py`）：
+  1. 把 `max_tokens` 从 200 提到 800（给 reasoning 留足空间，同时 System Prompt 里明确要求"最多 2 句、不超过 200 字符"来控制可见回复长度，两者分工：`max_tokens` 保证不空、Prompt 保证够短）。
+  2. `reply()` 里加了兜底：万一 `content` 还是空的，不再直接返回空字符串，而是返回一段带 `finish_reason` 的错误提示，方便下次一眼看出是这个问题而不是别的 bug。
+  3. `AlibabaTTSProvider.synthesize()` 发请求前先用 `_truncate_for_alibaba_tts()` 在**客户端**按句子边界（`. `/`! `/`? `）裁到 300 字符以内，裁不到干净边界才硬切+"…"，这样即使回复偶尔超长，播放出来的也是完整的句子而不是断在词中间。
+- **排查方法**：`journalctl -u ai-english-backend -f` 时，如果看到 Agent 回复变成 `[DeepSeek returned an empty reply (finish_reason=length)] ...`，说明又被 reasoning 吃满了 token，可以进一步调大 `MAX_REPLY_TOKENS`；如果回复文字完整但语音播到一半断掉，检查文字长度是否超过 300 字符（阿里 TTS）或对应供应商的单次合成上限。
+- **预防**：以后换/调 LLM 模型时，如果响应里出现 `reasoning_tokens` 字段，就说明这是个推理模型，`max_tokens` 必须显著大于"预期可见回复长度"才安全，不能只按"我要多长的回复"来估算。
+
 ## Agent 语音听起来生硬、不够"标准美音"
 
 - **原因**：早期 `TTS_PROVIDER=elevenlabs`/`azure` 都只是占位代码（`ElevenLabsTTSProvider`/`AzureTTSProvider` 从不真正调用云端 API，只返回带标记的假字节），手机端检测到占位字节会跳过播放，实际听到的声音全部来自**手机本地系统 TTS**（`expo-speech` → iOS `AVSpeechSynthesizer`），音质天然比不上云端神经网络 TTS。

@@ -57,6 +57,26 @@ class DeepgramTTSProvider(TTSProvider):
             return f"DEEPGRAM_TTS_ERROR::{exc}".encode("utf-8")
 
 
+# The one-sentence synthesis API silently truncates anything past this many
+# characters server-side — and not necessarily at a word/sentence boundary,
+# so a reply that runs long can come out audibly cut off mid-word. See
+# https://help.aliyun.com/zh/isi/developer-reference/overview-of-speech-synthesis
+ALIBABA_TTS_MAX_CHARS = 300
+
+
+def _truncate_for_alibaba_tts(text: str, limit: int = ALIBABA_TTS_MAX_CHARS) -> str:
+    """Clip text to Alibaba's per-request character cap at a clean sentence
+    boundary when possible, instead of letting the API cut it off mid-word.
+    """
+    if len(text) <= limit:
+        return text
+    clipped = text[:limit]
+    boundary = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
+    if boundary >= limit // 2:  # keep at least half the budget if there's a sentence break that late
+        return clipped[: boundary + 1]
+    return clipped.rstrip() + "…"
+
+
 class AlibabaTTSProvider(TTSProvider):
     """Alibaba Cloud Intelligent Speech Interaction (NLS) — speech synthesis.
 
@@ -79,7 +99,7 @@ class AlibabaTTSProvider(TTSProvider):
         self._tokens = AlibabaTokenManager(self._client)
 
     async def synthesize(self, text: str) -> bytes:
-        trimmed = text.strip()
+        trimmed = _truncate_for_alibaba_tts(text.strip())
         if not trimmed:
             return b""
 
