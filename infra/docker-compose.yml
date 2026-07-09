@@ -30,6 +30,10 @@ services:
       - ALIBABA_ASR_BASE_URL=https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/asr
       - ALIBABA_TOKEN_BASE_URL=https://nls-meta.cn-shanghai.aliyuncs.com/
       - ALIBABA_SAMPLE_RATE=16000
+      - ALIBABA_TTS_BASE_URL=https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/tts
+      - ALIBABA_TTS_VOICE=abby
+      - ALIBABA_TTS_FORMAT=mp3
+      - ALIBABA_TTS_SAMPLE_RATE=16000
     ports:
       - "8000:8000"
     depends_on:

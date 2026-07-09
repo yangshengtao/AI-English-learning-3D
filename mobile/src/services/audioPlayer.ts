@@ -11,6 +11,8 @@ const PLACEHOLDER_MARKERS = [
   "AZURE_AUDIO::",
   "DEEPGRAM_TTS_PLACEHOLDER::",
   "DEEPGRAM_TTS_ERROR::",
+  "ALIBABA_TTS_PLACEHOLDER::",
+  "ALIBABA_TTS_ERROR::",
 ];
 
 export type PlaybackResult = {

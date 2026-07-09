@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     alibaba_token_base_url: str = "https://nls-meta.cn-shanghai.aliyuncs.com/"
     alibaba_sample_rate: int = 16000
 
+    # Alibaba Cloud NLS speech synthesis — reuses the AccessKey/AppKey above
+    # (same X-NLS-Token mechanism as ASR). See https://help.aliyun.com/zh/isi/developer-reference/restful-api-3
+    # "abby"/"andy" are 美式英文 (American English) voices; see the voice list
+    # doc for more (e.g. "cindy", "donna", "eva", "brian", "david").
+    alibaba_tts_base_url: str = "https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/tts"
+    alibaba_tts_voice: str = "abby"
+    alibaba_tts_format: str = "mp3"
+    alibaba_tts_sample_rate: int = 16000
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

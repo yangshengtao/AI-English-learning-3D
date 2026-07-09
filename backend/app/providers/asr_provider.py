@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import base64
 import binascii
-import datetime
-import hashlib
-import hmac
-import time
-import uuid
-from urllib.parse import quote
 
 import httpx
 
 from app.config import settings
+from app.providers.alibaba_auth import AlibabaTokenManager, alibaba_credentials_configured, is_placeholder_key
 from app.providers.base import ASRProvider
 
 # Maps the `format` field sent by clients (see docs/realtime-protocol.md) to the
@@ -26,10 +21,6 @@ FORMAT_CONTENT_TYPES: dict[str, str] = {
     "flac": "audio/flac",
 }
 DEFAULT_CONTENT_TYPE = "audio/mp4"
-
-
-def _is_placeholder_key(api_key: str) -> bool:
-    return not api_key or api_key.strip().upper().startswith("REPLACE_")
 
 
 class DeepgramASRProvider(ASRProvider):
@@ -62,7 +53,7 @@ class DeepgramASRProvider(ASRProvider):
             return "", 0.0
 
         api_key = settings.deepgram_api_key
-        if _is_placeholder_key(api_key):
+        if is_placeholder_key(api_key):
             return "[Deepgram API key not configured — set DEEPGRAM_API_KEY]", 0.0
 
         try:
@@ -106,31 +97,6 @@ ALIBABA_FORMAT_MAP: dict[str, str] = {
 ALIBABA_SUCCESS_STATUS = 20000000
 
 
-def _percent_encode(value: str) -> str:
-    # Alibaba's RPC signature keeps "~" unescaped (matches RFC 3986); Python's
-    # quote() already treats "~" as safe by default, so this is just explicit.
-    return quote(str(value), safe="~")
-
-
-def _canonicalized_query_string(params: dict[str, str]) -> str:
-    return "&".join(f"{_percent_encode(k)}={_percent_encode(v)}" for k, v in sorted(params.items()))
-
-
-def _sign_alibaba_request(params: dict[str, str], access_key_secret: str) -> str:
-    """Alibaba Cloud RPC API signature v1.0 (HMAC-SHA1).
-
-    Docs: https://help.aliyun.com/zh/cmn/developer-reference/signature-mechanism
-    """
-    canonicalized = _canonicalized_query_string(params)
-    string_to_sign = f"GET&%2F&{_percent_encode(canonicalized)}"
-    digest = hmac.new(
-        f"{access_key_secret}&".encode("utf-8"),
-        string_to_sign.encode("utf-8"),
-        hashlib.sha1,
-    ).digest()
-    return base64.b64encode(digest).decode("utf-8")
-
-
 class AlibabaASRProvider(ASRProvider):
     """Alibaba Cloud Intelligent Speech Interaction (NLS) — one-sentence recognition.
 
@@ -148,48 +114,8 @@ class AlibabaASRProvider(ASRProvider):
     """
 
     def __init__(self) -> None:
-        self._token: str | None = None
-        self._token_expires_at: float = 0.0
         self._client = httpx.AsyncClient(timeout=20.0)
-
-    def _is_configured(self) -> bool:
-        return not any(
-            _is_placeholder_key(value)
-            for value in (
-                settings.alibaba_access_key_id,
-                settings.alibaba_access_key_secret,
-                settings.alibaba_app_key,
-            )
-        )
-
-    async def _fetch_token(self) -> str:
-        params = {
-            "AccessKeyId": settings.alibaba_access_key_id,
-            "Action": "CreateToken",
-            "Format": "JSON",
-            "RegionId": settings.alibaba_region,
-            "SignatureMethod": "HMAC-SHA1",
-            "SignatureNonce": str(uuid.uuid4()),
-            "SignatureVersion": "1.0",
-            "Timestamp": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "Version": "2019-02-28",
-        }
-        params["Signature"] = _sign_alibaba_request(params, settings.alibaba_access_key_secret)
-
-        response = await self._client.get(settings.alibaba_token_base_url, params=params, timeout=10.0)
-        response.raise_for_status()
-        payload = response.json()
-
-        token_info = payload["Token"]
-        self._token = str(token_info["Id"])
-        self._token_expires_at = float(token_info["ExpireTime"])
-        return self._token
-
-    async def _get_token(self) -> str:
-        # Refresh a minute early to avoid races with an about-to-expire token.
-        if self._token and time.time() < self._token_expires_at - 60:
-            return self._token
-        return await self._fetch_token()
+        self._tokens = AlibabaTokenManager(self._client)
 
     async def transcribe_chunk(
         self, audio_base64: str, *, is_final: bool = False, audio_format: str = "wav"
@@ -200,7 +126,7 @@ class AlibabaASRProvider(ASRProvider):
         if not is_final:
             return "", 0.0
 
-        if not self._is_configured():
+        if not alibaba_credentials_configured():
             return (
                 "[Alibaba Cloud NLS credentials not configured — set "
                 "ALIBABA_ACCESS_KEY_ID/ALIBABA_ACCESS_KEY_SECRET/ALIBABA_APP_KEY]",
@@ -215,7 +141,7 @@ class AlibabaASRProvider(ASRProvider):
         nls_format = ALIBABA_FORMAT_MAP.get(audio_format.lower(), "aac")
 
         try:
-            token = await self._get_token()
+            token = await self._tokens.get_token()
             response = await self._client.post(
                 settings.alibaba_asr_base_url,
                 params={

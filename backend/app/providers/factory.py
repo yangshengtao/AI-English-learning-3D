@@ -2,7 +2,7 @@ from app.config import settings
 from app.providers.asr_provider import AlibabaASRProvider, DeepgramASRProvider, GoogleASRProvider
 from app.providers.base import ASRProvider, LLMProvider, TTSProvider
 from app.providers.llm_provider import AnthropicLLMProvider, DeepSeekLLMProvider, OpenAILLMProvider
-from app.providers.tts_provider import AzureTTSProvider, DeepgramTTSProvider, ElevenLabsTTSProvider
+from app.providers.tts_provider import AlibabaTTSProvider, AzureTTSProvider, DeepgramTTSProvider, ElevenLabsTTSProvider
 
 
 def build_asr_provider() -> ASRProvider:
@@ -18,6 +18,8 @@ def build_tts_provider() -> TTSProvider:
         return AzureTTSProvider()
     if settings.tts_provider == "deepgram":
         return DeepgramTTSProvider()
+    if settings.tts_provider == "alibaba":
+        return AlibabaTTSProvider()
     return ElevenLabsTTSProvider()
 
 
