@@ -149,6 +149,12 @@ Mac 查 IP：`ipconfig getifaddr en0`
 
 如果想要真正"装一次以后完全脱离 Mac/网络限制"的体验，需要走 EAS Build + TestFlight，那条路需要先注册 Apple Developer Program（$99/年）。
 
+## 后端改动的工作流规范（代码 vs .env）
+
+- **代码改动（`.py`、`requirements*.txt` 等受 git 管理的文件）**：本地改 → `cd backend && pytest` 跑通 → `git commit` + `git push` → 服务器上 `git pull` 拉取。**不要**再直接 SSH 上服务器改代码或 `scp` 文件上去——那样会导致服务器 git 仓库出现"未提交的本地改动"，下次 `git pull` 会被挡住，需要手动 `git checkout -- <file>` 才能继续（踩过这个坑，见本次改动记录）。
+- **`.env` 文件**：本机和服务器各自独立维护，永远不会、也不应该通过 git 同步——两边的 Provider 选择本来就可能不同（比如本机 `ASR_PROVIDER=alibaba`、服务器 `ASR_PROVIDER=deepgram`），这是正常现象不是 bug。每次改完服务器的 `.env` 记得 `sudo systemctl restart ai-english-backend`（`--reload` 只监听代码文件，不会重新读 `.env`）。
+- 完整规范和示例命令见 `.cursor/rules/backend-deployment-workflow.mdc`。
+
 ## 服务器部署（腾讯云）
 
 后端已部署在腾讯云服务器（`152.136.254.150`），排查结论记录如下：

@@ -1,0 +1,50 @@
+---
+description: Backend change/deploy workflow — local-first for code, per-env for .env
+globs: backend/**,infra/**
+alwaysApply: false
+---
+
+# Backend Deployment Workflow
+
+Two different rules depending on what's changing: **code** vs **`.env`**.
+
+## Code changes (`.py`, `requirements*.txt`, `pytest.ini`, etc.) — local-first, never edit on the server
+
+1. Edit locally in `backend/`.
+2. Run tests: `cd backend && source .venv/bin/activate && pytest`.
+3. Commit + push to GitHub.
+4. SSH to the server and `git pull` — **do not** hand-edit or `scp` tracked files onto
+   the server; that creates drift that later breaks `git pull` (uncommitted local diff
+   blocks the fast-forward and needs a manual `git checkout -- <file>` to resolve).
+5. If code actually changed, restart the service:
+   `ssh ubuntu@152.136.254.150 "sudo systemctl restart ai-english-backend"`.
+
+```bash
+# ❌ BAD — editing/copying code straight onto the server
+ssh ubuntu@152.136.254.150 "vim ~/ai-english/backend/app/main.py"
+scp backend/app/main.py ubuntu@152.136.254.150:~/ai-english/backend/app/main.py
+
+# ✅ GOOD
+cd backend && pytest && git add -A && git commit -m "..." && git push
+ssh ubuntu@152.136.254.150 "cd ~/ai-english && git pull --ff-only && sudo systemctl restart ai-english-backend"
+```
+
+## `.env` files — always edited independently per environment, never via git
+
+`backend/.env` is gitignored and **intentionally different** on the Mac vs. the server
+(different provider choices, e.g. local ASR may be `alibaba` while the server runs
+`deepgram`). This is not drift to fix — it's expected. For each environment:
+
+- Edit that environment's `.env` directly (locally with the file tools; on the server
+  via SSH + `sed`/append). Never try to sync `.env` contents through git.
+- When copying a secret between environments (e.g. reusing `DEEPGRAM_API_KEY` for a
+  new provider), pipe it directly so the value is never printed to a terminal/log:
+  `ssh user@host 'cat >> ~/ai-english/backend/.env' < <(grep '^KEY=' backend/.env)`.
+- Always `sudo systemctl restart ai-english-backend` after editing the server's `.env`
+  — `uvicorn --reload` only watches code files, not `.env`.
+
+## Server reference
+
+- SSH: `ubuntu@152.136.254.150` (key-based, no password).
+- Service: `ai-english-backend` (systemd, auto-restart + enabled at boot).
+- Repo path on server: `~/ai-english`.
