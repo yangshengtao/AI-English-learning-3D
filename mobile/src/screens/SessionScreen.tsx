@@ -42,6 +42,12 @@ export function SessionScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [speechStatus, setSpeechStatus] = useState<"idle" | "speaking">("idle");
   const recordingRef = useRef<Audio.Recording | null>(null);
+  // Voice turns (audio.commit) get a cloud-synthesized `agent.audio` reply right
+  // after `agent.text`; text turns (session.input_text) never do. We use this to
+  // avoid playing both the cloud audio *and* on-device expo-speech at once —
+  // on-device speech only kicks in as a fallback when cloud audio is missing/placeholder.
+  const expectAudioReplyRef = useRef(false);
+  const latestAgentReplyRef = useRef("");
 
   useEffect(() => {
     return () => {
@@ -115,18 +121,34 @@ export function SessionScreen() {
         if (event.type === "agent.text") {
           const text = String(event.payload.text ?? "");
           setAgentReply(text);
-          speakAgentReply(text, {
-            onStart: () => setSpeechStatus("speaking"),
-            onDone: () => setSpeechStatus("idle"),
-            onError: () => setSpeechStatus("idle"),
-          });
+          latestAgentReplyRef.current = text;
+          // Voice turns: hold off — `agent.audio` (cloud TTS) arrives next and
+          // takes priority. Text turns: no `agent.audio` is coming, speak now.
+          if (!expectAudioReplyRef.current) {
+            speakAgentReply(text, {
+              onStart: () => setSpeechStatus("speaking"),
+              onDone: () => setSpeechStatus("idle"),
+              onError: () => setSpeechStatus("idle"),
+            });
+          }
         }
         if (event.type === "agent.audio") {
+          const wasExpectingAudio = expectAudioReplyRef.current;
+          expectAudioReplyRef.current = false;
           const audioBase64 = String(event.payload.audioBase64 ?? "");
           const sampleRate = Number(event.payload.sampleRate ?? 24000);
           playPcm16Audio(audioBase64, sampleRate)
             .then((result) => {
               setAudioNote(result.played ? "playing agent audio" : (result.reason ?? "audio not played"));
+              // Cloud TTS wasn't available (placeholder/unconfigured/error) —
+              // fall back to on-device speech so the voice turn isn't silent.
+              if (!result.played && wasExpectingAudio && latestAgentReplyRef.current) {
+                speakAgentReply(latestAgentReplyRef.current, {
+                  onStart: () => setSpeechStatus("speaking"),
+                  onDone: () => setSpeechStatus("idle"),
+                  onError: () => setSpeechStatus("idle"),
+                });
+              }
             })
             .catch((error) => setAudioNote(`audio playback error: ${String(error)}`));
         }
@@ -159,6 +181,7 @@ export function SessionScreen() {
     if (!typedText.trim()) {
       return;
     }
+    expectAudioReplyRef.current = false;
     send("session.input_text", { text: typedText.trim() });
     setTypedText("");
   };
@@ -174,6 +197,7 @@ export function SessionScreen() {
       try {
         setStatus("processing recording...");
         const { base64, format, sampleRate } = await stopRecording(recording);
+        expectAudioReplyRef.current = true;
         send("audio.chunk", { seq: 1, audioBase64: base64, sampleRate, format });
         send("audio.commit", { lastSeq: 1 });
         setStatus("recording sent");
@@ -203,7 +227,8 @@ export function SessionScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.title}>1v1 English Tutor Session</Text>
         <Text style={styles.hint}>
-          iOS device tip: use your Mac LAN IP (detected: {lanIpHint}) instead of localhost.
+          Defaults to the deployed backend. To test against your Mac instead, replace the
+          URLs below with your Mac LAN IP (detected: {lanIpHint}), not localhost.
         </Text>
         <AvatarPanel avatarPageUrl={AVATAR_PAGE_URL} />
 

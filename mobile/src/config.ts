@@ -5,6 +5,16 @@ type AppExtra = {
   backendWsUrl?: string;
 };
 
+// Deployed backend (Tencent Cloud). This is the default so the app works out of
+// the box without needing a Mac running the backend locally. Override via
+// EXPO_PUBLIC_BACKEND_HTTP_URL / EXPO_PUBLIC_BACKEND_WS_URL (see mobile/.env.example)
+// or by editing the Backend URL fields directly in the running app if you want to
+// point at a local backend instead.
+const DEFAULT_BACKEND_HOST = "152.136.254.150";
+const DEFAULT_BACKEND_PORT = 8000;
+const DEFAULT_BACKEND_HTTP_URL = `http://${DEFAULT_BACKEND_HOST}:${DEFAULT_BACKEND_PORT}`;
+const DEFAULT_BACKEND_WS_URL = `ws://${DEFAULT_BACKEND_HOST}:${DEFAULT_BACKEND_PORT}/v1/realtime/session`;
+
 function isLocalhostUrl(url: string): boolean {
   return /localhost|127\.0\.0\.1/i.test(url);
 }
@@ -38,18 +48,12 @@ export function getLanIpHint(): string {
 }
 
 export function resolveBackendUrls(extra: AppExtra = getAppExtra()) {
-  const host = pickHostFromConstants() ?? "your-mac-ip";
   const httpFromEnv = extra.backendHttpUrl?.trim();
   const wsFromEnv = extra.backendWsUrl?.trim();
 
   const httpUrl =
-    httpFromEnv && !isLocalhostUrl(httpFromEnv)
-      ? httpFromEnv
-      : `http://${host}:8000`;
-  const wsUrl =
-    wsFromEnv && !isLocalhostUrl(wsFromEnv)
-      ? wsFromEnv
-      : `ws://${host}:8000/v1/realtime/session`;
+    httpFromEnv && !isLocalhostUrl(httpFromEnv) ? httpFromEnv : DEFAULT_BACKEND_HTTP_URL;
+  const wsUrl = wsFromEnv && !isLocalhostUrl(wsFromEnv) ? wsFromEnv : DEFAULT_BACKEND_WS_URL;
 
-  return { httpUrl, wsUrl, host };
+  return { httpUrl, wsUrl, host: DEFAULT_BACKEND_HOST };
 }

@@ -2,11 +2,16 @@ import { Audio } from "expo-av";
 import * as FileSystem from "expo-file-system/legacy";
 import * as base64js from "base64-js";
 
-// Placeholder TTS providers (see backend/app/providers/tts_provider.py) return
-// plain-text bytes tagged with these prefixes instead of real PCM audio.
-// We detect and skip playback so users don't hear meaningless static before
-// a real TTS provider is wired in.
-const PLACEHOLDER_MARKERS = ["ELEVENLABS_AUDIO::", "AZURE_AUDIO::"];
+// Placeholder/error TTS providers (see backend/app/providers/tts_provider.py)
+// return plain-text bytes tagged with these prefixes instead of real PCM
+// audio. We detect and skip playback so users don't hear meaningless static
+// when a provider isn't configured or a request fails.
+const PLACEHOLDER_MARKERS = [
+  "ELEVENLABS_AUDIO::",
+  "AZURE_AUDIO::",
+  "DEEPGRAM_TTS_PLACEHOLDER::",
+  "DEEPGRAM_TTS_ERROR::",
+];
 
 export type PlaybackResult = {
   played: boolean;
