@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     deepgram_base_url: str = "https://api.deepgram.com/v1/listen"
     deepgram_model: str = "nova-3"
 
+    # Deepgram Aura-2 text-to-speech; see https://developers.deepgram.com/docs/text-to-speech
+    # Reuses DEEPGRAM_API_KEY above (same account as ASR) — no separate key needed.
+    deepgram_tts_base_url: str = "https://api.deepgram.com/v1/speak"
+    deepgram_tts_model: str = "aura-2-thalia-en"
+    deepgram_tts_sample_rate: int = 24000
+
     # Alibaba Cloud Intelligent Speech Interaction (NLS) — one-sentence recognition.
     # Docs: https://help.aliyun.com/zh/isi/developer-reference/restful-api-2
     # AccessKeyId/Secret are used to auto-fetch a short-lived X-NLS-Token; AppKey comes

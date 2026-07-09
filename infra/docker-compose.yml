@@ -11,7 +11,7 @@ services:
       - ENV=dev
       - JWT_SECRET=change-me
       - ASR_PROVIDER=deepgram
-      - TTS_PROVIDER=elevenlabs
+      - TTS_PROVIDER=deepgram
       - LLM_PROVIDER=deepseek
       - DEEPSEEK_API_KEY=REPLACE_WITH_DEEPSEEK_API_KEY
       - DEEPSEEK_BASE_URL=https://api.deepseek.com
@@ -19,6 +19,9 @@ services:
       - DEEPGRAM_API_KEY=REPLACE_WITH_DEEPGRAM_API_KEY
       - DEEPGRAM_BASE_URL=https://api.deepgram.com/v1/listen
       - DEEPGRAM_MODEL=nova-3
+      - DEEPGRAM_TTS_BASE_URL=https://api.deepgram.com/v1/speak
+      - DEEPGRAM_TTS_MODEL=aura-2-thalia-en
+      - DEEPGRAM_TTS_SAMPLE_RATE=24000
       - ALIBABA_ACCESS_KEY_ID=REPLACE_WITH_ALIBABA_ACCESS_KEY_ID
       - ALIBABA_ACCESS_KEY_SECRET=REPLACE_WITH_ALIBABA_ACCESS_KEY_SECRET
       - ALIBABA_APP_KEY=REPLACE_WITH_ALIBABA_APP_KEY

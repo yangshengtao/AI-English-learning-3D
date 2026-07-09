@@ -43,9 +43,36 @@ FastAPI realtime backend for the 1v1 English tutor agent.
 - Only the final audio chunk (`audio.commit`) is sent to Alibaba — same rationale as
   Deepgram (avoid double-billing/quota usage on partial chunks).
 
+## TTS provider (Deepgram Aura-2)
+- Default `TTS_PROVIDER=deepgram`, text-to-speech API: https://developers.deepgram.com/docs/text-to-speech
+- Reuses `DEEPGRAM_API_KEY` from the ASR section above — same Deepgram account, no
+  extra key needed. Until a real key is set, `agent.audio` carries placeholder bytes
+  (`DEEPGRAM_TTS_PLACEHOLDER::...`) that the mobile client detects and skips playback
+  for (falls back to on-device `expo-speech` instead — see `mobile/src/services/textToSpeech.ts`).
+- Voice defaults to `aura-2-thalia-en`; override with `DEEPGRAM_TTS_MODEL` — browse
+  voices at https://developers.deepgram.com/docs/tts-models.
+- Requests raw 16-bit PCM with no container (`encoding=linear16&container=none`) at
+  `DEEPGRAM_TTS_SAMPLE_RATE` (default `24000` Hz) so the bytes can be sent straight
+  through `agent.audio` — the mobile client wraps them in a WAV header itself.
+- `TTS_PROVIDER=elevenlabs` / `azure` remain available as unimplemented placeholders
+  (return labeled fake bytes) for future real integrations.
+
 ## Dev auth token
 - `POST /v1/auth/dev-token` returns a short-lived JWT for local websocket tests.
 
 ## Realtime endpoint
 - `wss://<host>/v1/realtime/session`
 - Requires `Authorization: Bearer <jwt>`.
+
+## Tests
+- `pip install -r requirements-dev.txt`
+- `pytest` (run from `backend/`)
+- Covers `/healthz`, `/v1/auth/dev-token`, the full `/v1/realtime/session` WebSocket
+  flow (auth, `session.start`/`audio.chunk`/`audio.commit`/`session.input_text`/`session.stop`,
+  unsupported events), and the pure `evaluation`/`lesson_planner` helpers.
+- `tests/conftest.py` forces every provider API key to a placeholder value before the
+  app is imported, so the suite never hits real DeepSeek/Deepgram/Alibaba APIs or
+  depends on whatever is in your local `.env` — safe to run offline and in CI.
+- Swagger UI (`/docs`) is for humans; for **automated** API contract testing, point a
+  schema-driven tool (e.g. [schemathesis](https://schemathesis.readthedocs.io/)) at the
+  live `/openapi.json` instead — `schemathesis run http://localhost:8000/openapi.json`.

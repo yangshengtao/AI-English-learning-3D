@@ -12,6 +12,11 @@ class ASRProvider(ABC):
 
 
 class TTSProvider(ABC):
+    # Sample rate (Hz) of the PCM16 bytes `synthesize()` returns. Session
+    # orchestration reports this in the `agent.audio` event's `sampleRate`
+    # field so the mobile client's WAV header always matches the real audio.
+    sample_rate: int = 24000
+
     @abstractmethod
     async def synthesize(self, text: str) -> bytes:
         raise NotImplementedError

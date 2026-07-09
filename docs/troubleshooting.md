@@ -111,6 +111,75 @@ Mac 查 IP：`ipconfig getifaddr en0`
 
 **限制**：Alibaba 一句话识别仅支持单声道、8000/16000 Hz 音频，且单次识别时长上限 60 秒；`mobile/src/services/audioRecorder.ts` 已固定录制 16kHz 单声道，两个 Provider 都兼容。
 
+## 录音对话时同时听到两个声音（云端 TTS + 手机本地朗读）
+
+- **现象**：语音录音对话时,一句回复听到两个声音同时/重叠播放。
+- **原因**：`SessionScreen.tsx` 之前对 `agent.text` 和 `agent.audio` 是各自独立处理的——收到 `agent.text` 就立刻用手机本地 `expo-speech` 朗读一次,收到 `agent.audio` 又会再播放一次云端合成的音频。以前云端 TTS 是占位假数据、播放会被跳过,所以只听到本地朗读一个声音；接入 Deepgram Aura-2 真实 TTS 后，两条播放路径都变成真实有声音了，就出现了重叠。
+- **解决**：加了一个 `expectAudioReplyRef` 标记区分两种对话路径——语音录音（`audio.commit`）预期后面会有 `agent.audio`，收到 `agent.text` 先不朗读，等 `agent.audio` 到了再播云端音频；只有云端音频是占位/失败时才回退到手机本地朗读兜底。文字对话（`session.input_text`）从来不会有 `agent.audio`，收到 `agent.text` 照常立刻本地朗读，不受影响。
+- **预防**：以后如果给 `agent.text`/`agent.audio` 任一路径加新的自动播放逻辑，注意两者是同一次对话的一体两面，不要让两条链路各自无条件地触发播放。
+
+## Agent 语音听起来生硬、不够"标准美音"
+
+- **原因**：早期 `TTS_PROVIDER=elevenlabs`/`azure` 都只是占位代码（`ElevenLabsTTSProvider`/`AzureTTSProvider` 从不真正调用云端 API，只返回带标记的假字节），手机端检测到占位字节会跳过播放，实际听到的声音全部来自**手机本地系统 TTS**（`expo-speech` → iOS `AVSpeechSynthesizer`），音质天然比不上云端神经网络 TTS。
+- **已解决**：接入了 **Deepgram Aura-2**（`TTS_PROVIDER=deepgram`），复用已有的 `DEEPGRAM_API_KEY`（和 ASR 同一个账号，不需要新申请 key）。现在 `agent.audio` 里是真实合成的 PCM16 音频，本机 `expo-speech` 只在这条链路失败/未配置时才会作为兜底。
+- 想换音色：改 `DEEPGRAM_TTS_MODEL`（默认 `aura-2-thalia-en`），完整列表见 https://developers.deepgram.com/docs/tts-models 。改完记得重启后端（本机 `.env` 和服务器 `.env` 是两份独立配置，别只改一边）。
+- 如果 `agent.audio` 又开始不出声，检查 Transcript/日志里是否又出现 `DEEPGRAM_TTS_PLACEHOLDER::`（key 未配置）或 `DEEPGRAM_TTS_ERROR::`（请求失败，通常是 key 或配额问题）字样,原理和 ASR 那节的排查方法一样。
+
+## Agent 回复很怪（比如一直提"audio tool having a hiccup"）
+
+- **现象**：点击 Start Recording 说话后，Agent 文字回复完全不像在回应你说的内容，反而像是在聊"设备/工具有点问题"这种奇怪话题；Transcript 框里显示的也不是你说的话。
+- **原因**：ASR（Deepgram/Alibaba）没配置真实 Key 或请求失败时，会返回一段**人类可读的占位/报错文案**（例如 `[Deepgram API key not configured — set DEEPGRAM_API_KEY]`），这段文案会被当作"学员说的话"直接传给 LLM。LLM 不知道这是系统错误，只会当成普通对话内容去自然回应，于是就聊出一些看起来语无伦次、实际是在回应报错信息的话。
+- **排查方法**：先看 App 里的 **Transcript** 框（不是 Agent 回复框）——如果显示的是方括号包起来的英文提示（`[Deepgram ...]` / `[Alibaba ...]`）而不是你说的话，说明问题在 ASR 这一层，和 LLM/网络无关。
+- **解决**：确认对应后端（本机或服务器）的 `.env` 里 `DEEPGRAM_API_KEY`（或 `ALIBABA_ACCESS_KEY_*`）是真实值而不是 `REPLACE_WITH_...` 占位符，改完记得重启后端进程（`uvicorn --reload` 不会重新读 `.env`，systemd 也要手动 `systemctl restart`）。
+- **预防**：本机和服务器是两份独立的 `.env`，配置一个 Key 时容易忘记同步另一份——每次新增/换 Key 后，最好都用 `grep -q '^KEY_NAME=' .env` 分别在本机和服务器上确认一下（不要 `cat`/打印真实值），别只改了一边。
+
+## 装到 iPhone 是否必须和 Mac 同一局域网
+
+**现状**：Expo Go 模式下"扫码打开"本质是让手机上早就装好的 Expo Go 去 Mac 的 Metro 开发服务器拉 JS 代码，默认走局域网发现，所以必须同一 Wi-Fi。
+
+**三种解法：**
+
+| 方案 | 要不要同局域网 | 要不要一直开着 Mac | 成本 |
+|------|------|------|------|
+| `npm start`（默认 `--lan`） | 需要 | 需要 | 免费 |
+| `npm run start:tunnel` | **不需要**（走 ngrok 隧道，任意网络能连） | 仍需要 | 免费 |
+| EAS Build + TestFlight 打真包 | 不需要 | **不需要**，装完是独立 App | 需要 Apple Developer Program（$99/年） |
+
+已经把 `npm run start:tunnel` 加进了 `mobile/package.json`（依赖 `@expo/ngrok`，已装好）。用法和 `npm start` 一样，扫码或手动在 Expo Go 里粘贴 `exp://` 链接即可，不挑网络，只是延迟比局域网略高（流量经过 ngrok 中转）。
+
+如果想要真正"装一次以后完全脱离 Mac/网络限制"的体验，需要走 EAS Build + TestFlight，那条路需要先注册 Apple Developer Program（$99/年）。
+
+## 服务器部署（腾讯云）
+
+后端已部署在腾讯云服务器（`152.136.254.150`），排查结论记录如下：
+
+### 移动端能直接访问远程后端吗
+- **可以**：`http://152.136.254.150:8000` 已从公网验证可达（`curl` 直接测通 `/docs`、`/healthz`）。
+- 只需在 App 里把 **Backend HTTP URL** / **Backend WebSocket URL** 改成：
+  - `http://152.136.254.150:8000`
+  - `ws://152.136.254.150:8000/v1/realtime/session`
+  - 或直接用 `mobile/.env`（见 `mobile/.env.example`）设置默认值，无需每次手填。
+- Expo Go 对明文 HTTP 比较宽松，调试阶段够用；**但没有 TLS**，正式打包/上架前必须换成域名 + HTTPS（`wss://`），否则会被 iOS ATS / Android 明文流量策略拦掉。
+- 80/443 端口当前对公网不可达（安全组大概率只放了 22 和 8000），Caddy 目前也只是返回默认静态页，没有反代到后端——如果要上 HTTPS，需要：申请域名 → 安全组放开 80/443 → 配置 Caddy 反代到 `127.0.0.1:8000` 并让它自动签发证书。
+
+### 后端常驻性
+- 之前是手动跑的 `uvicorn`，SSH 断开或服务器重启就会挂掉。
+- 已改为 systemd 托管：`/etc/systemd/system/ai-english-backend.service`（`systemctl enable --now` 已执行），崩溃自动重启、开机自启。
+- 常用命令：`sudo systemctl status/restart/stop ai-english-backend`，日志 `sudo journalctl -u ai-english-backend -f`。
+- **改了 `backend/.env` 后必须 `sudo systemctl restart ai-english-backend`**（`--reload` 只监听代码文件变化，不会重新读 `.env`）。
+
+### LLM 配置差异
+- 服务器 `.env` 里 `LLM_PROVIDER` 曾是 `openai`，但 `OpenAILLMProvider` 只是占位模板（不真正调用任何 API），和本地验证过的 DeepSeek 效果不一样。
+- 已切换为 `LLM_PROVIDER=deepseek` 并同步了 `DEEPSEEK_API_KEY`，重启后端后用真实 WebSocket 会话验证过：`providerRoute.llm == "deepseek"`，回复是真实生成的句子而不是模板。
+
+## Swagger UI 能否用于自动化接口测试
+
+结论：**Swagger UI 本身是给人看的交互页面**，不是能直接"塞进"自动化流程的东西；但它背后的 OpenAPI schema（`GET /openapi.json`，FastAPI 自动生成）正是自动化工具需要的输入。已落地方案：
+
+- `backend/tests/`：pytest + FastAPI `TestClient`，覆盖 `/healthz`、`/v1/auth/dev-token`、完整的 `/v1/realtime/session` WebSocket 流程（鉴权失败、`session.start/audio.chunk/audio.commit/session.input_text/session.stop`、未知事件类型），以及 `evaluation`/`lesson_planner` 纯函数。运行：`cd backend && pip install -r requirements-dev.txt && pytest`。
+- `tests/conftest.py` 在导入 app 之前把所有 provider 的 API Key 强制设为占位值，保证测试离线运行、不消耗真实配额、不受本机 `.env` 内容影响，适合接入 CI。
+- 如果还想要契约/模糊测试，可以在此基础上加 [schemathesis](https://schemathesis.readthedocs.io/)，直接指向线上 `openapi.json` 跑：`schemathesis run http://152.136.254.150:8000/openapi.json`——不需要额外写用例，能自动发现 schema 与实际响应不一致的问题。
+
 ## 新增条目模板
 
 ```markdown

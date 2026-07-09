@@ -119,7 +119,7 @@ class SessionAgent:
                     timestampMs=now + 20,
                     payload={
                         "audioBase64": base64.b64encode(audio_bytes).decode("utf-8"),
-                        "sampleRate": 24000,
+                        "sampleRate": self.tts.sample_rate,
                         "format": "pcm16",
                     },
                 )
