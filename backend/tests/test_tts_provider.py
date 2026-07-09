@@ -29,3 +29,9 @@ def test_deepgram_tts_sample_rate_matches_settings() -> None:
     provider = DeepgramTTSProvider()
 
     assert provider.sample_rate == settings.deepgram_tts_sample_rate
+
+
+def test_deepgram_tts_audio_format_matches_settings() -> None:
+    provider = DeepgramTTSProvider()
+
+    assert provider.audio_format == settings.deepgram_tts_encoding

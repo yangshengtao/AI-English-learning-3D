@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     deepgram_tts_base_url: str = "https://api.deepgram.com/v1/speak"
     deepgram_tts_model: str = "aura-2-thalia-en"
     deepgram_tts_sample_rate: int = 24000
+    # mp3 instead of raw linear16 PCM: on a slow/lossy cross-border network
+    # path (e.g. mainland China -> Deepgram US), the ~8x smaller compressed
+    # payload noticeably cuts TTS latency and its variance. Set back to
+    # "linear16" if a deployment's network path is fast and you'd rather skip
+    # the mobile client's mp3 decode.
+    deepgram_tts_encoding: str = "mp3"
 
     # Alibaba Cloud Intelligent Speech Interaction (NLS) — one-sentence recognition.
     # Docs: https://help.aliyun.com/zh/isi/developer-reference/restful-api-2

@@ -13,7 +13,7 @@ import {
 import { Audio } from "expo-av";
 
 import { AvatarPanel } from "../components/AvatarPanel";
-import { playPcm16Audio } from "../services/audioPlayer";
+import { playAgentAudio } from "../services/audioPlayer";
 import { requestMicrophonePermission, startRecording, stopRecording } from "../services/audioRecorder";
 import { fetchDevToken } from "../services/backendApi";
 import { getAppExtra, getLanIpHint, resolveBackendUrls } from "../config";
@@ -137,7 +137,8 @@ export function SessionScreen() {
           expectAudioReplyRef.current = false;
           const audioBase64 = String(event.payload.audioBase64 ?? "");
           const sampleRate = Number(event.payload.sampleRate ?? 24000);
-          playPcm16Audio(audioBase64, sampleRate)
+          const audioFormat = String(event.payload.format ?? "pcm16");
+          playAgentAudio(audioBase64, sampleRate, audioFormat)
             .then((result) => {
               setAudioNote(result.played ? "playing agent audio" : (result.reason ?? "audio not played"));
               // Cloud TTS wasn't available (placeholder/unconfigured/error) —

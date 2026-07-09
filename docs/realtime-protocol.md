@@ -62,7 +62,15 @@ All websocket frames use JSON:
 - `agent.text`
   - payload: `{ "text": "Great. You can say: I'd like a coffee, please." }`
 - `agent.audio`
-  - payload: `{ "audioBase64": "...", "sampleRate": 24000, "format": "pcm16" }`
+  - payload: `{ "audioBase64": "...", "sampleRate": 24000, "format": "mp3" }`
+  - `format` reflects the active TTS provider's `audio_format` (see
+    `backend/app/providers/base.py`) — `"pcm16"` is raw PCM the client must
+    wrap in a WAV header before playback; anything else (`"mp3"`, `"opus"`,
+    ...) is a self-describing container the client can hand straight to its
+    audio player. Deepgram Aura-2 defaults to `mp3` (see
+    `DEEPGRAM_TTS_ENCODING`) since it's ~8x smaller over the wire than raw
+    PCM for the same speech — see the "Stop Recording 到播放延迟高" entry in
+    `docs/troubleshooting.md` for why that matters.
 - `avatar.cue`
   - payload: `{ "visemeTimeline": [], "emotion": "encouraging" }`
 - `eval.feedback`

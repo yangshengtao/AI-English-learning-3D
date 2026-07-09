@@ -81,22 +81,34 @@ async function unloadCurrentSound() {
   }
 }
 
-export async function playPcm16Audio(
+// File extensions for compressed formats the backend may send (see
+// backend/app/providers/base.py `TTSProvider.audio_format`) — expo-av can
+// decode these directly, no WAV header needed. Anything not listed here is
+// assumed to be raw "pcm16" and gets wrapped in a WAV header below.
+const COMPRESSED_FORMAT_EXTENSIONS: Record<string, string> = {
+  mp3: "mp3",
+  opus: "opus",
+  aac: "aac",
+  flac: "flac",
+};
+
+export async function playAgentAudio(
   audioBase64: string,
   sampleRate: number,
+  format: string = "pcm16",
 ): Promise<PlaybackResult> {
   if (!audioBase64) {
     return { played: false, reason: "empty audio payload" };
   }
 
-  let pcmBytes: Uint8Array;
+  let audioBytes: Uint8Array;
   try {
-    pcmBytes = base64js.toByteArray(audioBase64);
+    audioBytes = base64js.toByteArray(audioBase64);
   } catch (error) {
     return { played: false, reason: `invalid base64 audio: ${String(error)}` };
   }
 
-  if (isPlaceholderAudio(pcmBytes)) {
+  if (isPlaceholderAudio(audioBytes)) {
     return {
       played: false,
       reason: "placeholder TTS bytes — connect a real TTS provider to hear audio",
@@ -104,16 +116,29 @@ export async function playPcm16Audio(
   }
 
   try {
-    const header = buildWavHeader(pcmBytes.length, sampleRate);
-    const wavBytes = new Uint8Array(header.length + pcmBytes.length);
-    wavBytes.set(header, 0);
-    wavBytes.set(pcmBytes, header.length);
-    const wavBase64 = base64js.fromByteArray(wavBytes);
+    const compressedExtension = COMPRESSED_FORMAT_EXTENSIONS[format.toLowerCase()];
+    let fileUri: string;
+    if (compressedExtension) {
+      // Already a self-describing container (mp3/opus/...) — write as-is,
+      // no WAV header to build. This is also ~8x smaller over the wire than
+      // raw pcm16 for the same speech, which is why the backend defaults to
+      // mp3 (see DeepgramTTSProvider).
+      fileUri = `${FileSystem.cacheDirectory}agent-audio-${Date.now()}.${compressedExtension}`;
+      await FileSystem.writeAsStringAsync(fileUri, audioBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    } else {
+      const header = buildWavHeader(audioBytes.length, sampleRate);
+      const wavBytes = new Uint8Array(header.length + audioBytes.length);
+      wavBytes.set(header, 0);
+      wavBytes.set(audioBytes, header.length);
+      const wavBase64 = base64js.fromByteArray(wavBytes);
 
-    const fileUri = `${FileSystem.cacheDirectory}agent-audio-${Date.now()}.wav`;
-    await FileSystem.writeAsStringAsync(fileUri, wavBase64, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+      fileUri = `${FileSystem.cacheDirectory}agent-audio-${Date.now()}.wav`;
+      await FileSystem.writeAsStringAsync(fileUri, wavBase64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+    }
 
     await unloadCurrentSound();
     // iOS pins audio output to the quiet earpiece receiver (not the main

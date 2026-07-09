@@ -146,7 +146,7 @@ class SessionAgent:
                     payload={
                         "audioBase64": base64.b64encode(audio_bytes).decode("utf-8"),
                         "sampleRate": self.tts.sample_rate,
-                        "format": "pcm16",
+                        "format": self.tts.audio_format,
                     },
                 )
             )

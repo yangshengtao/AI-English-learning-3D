@@ -105,6 +105,10 @@ def test_audio_turn_runs_full_pipeline(client: TestClient) -> None:
 
         agent_audio = ws.receive_json()
         assert agent_audio["type"] == "agent.audio"
+        # This suite runs with TTS_PROVIDER=elevenlabs (see conftest.py), whose
+        # placeholder provider never overrides TTSProvider.audio_format, so it
+        # reports the base class default "pcm16". Deepgram would report "mp3"
+        # instead — see test_deepgram_tts_audio_format_matches_settings.
         assert agent_audio["payload"]["format"] == "pcm16"
 
         avatar_cue = ws.receive_json()
