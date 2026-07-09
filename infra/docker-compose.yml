@@ -12,7 +12,20 @@ services:
       - JWT_SECRET=change-me
       - ASR_PROVIDER=deepgram
       - TTS_PROVIDER=elevenlabs
-      - LLM_PROVIDER=openai
+      - LLM_PROVIDER=deepseek
+      - DEEPSEEK_API_KEY=REPLACE_WITH_DEEPSEEK_API_KEY
+      - DEEPSEEK_BASE_URL=https://api.deepseek.com
+      - DEEPSEEK_MODEL=deepseek-v4-flash
+      - DEEPGRAM_API_KEY=REPLACE_WITH_DEEPGRAM_API_KEY
+      - DEEPGRAM_BASE_URL=https://api.deepgram.com/v1/listen
+      - DEEPGRAM_MODEL=nova-3
+      - ALIBABA_ACCESS_KEY_ID=REPLACE_WITH_ALIBABA_ACCESS_KEY_ID
+      - ALIBABA_ACCESS_KEY_SECRET=REPLACE_WITH_ALIBABA_ACCESS_KEY_SECRET
+      - ALIBABA_APP_KEY=REPLACE_WITH_ALIBABA_APP_KEY
+      - ALIBABA_REGION=cn-shanghai
+      - ALIBABA_ASR_BASE_URL=https://nls-gateway-cn-shanghai.aliyuncs.com/stream/v1/asr
+      - ALIBABA_TOKEN_BASE_URL=https://nls-meta.cn-shanghai.aliyuncs.com/
+      - ALIBABA_SAMPLE_RATE=16000
     ports:
       - "8000:8000"
     depends_on:

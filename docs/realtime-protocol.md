@@ -33,8 +33,20 @@ All websocket frames use JSON:
   - payload: `{ "mode": "free_talk|scenario|shadowing", "scenario": "optional" }`
 - `audio.chunk`
   - payload: `{ "seq": 12, "audioBase64": "...", "sampleRate": 16000, "format": "pcm16" }`
+  - **Mobile client note**: the current mobile app records one clip per turn with
+    `expo-av` (`Audio.RecordingOptionsPresets.HIGH_QUALITY`) and uploads it as a
+    single chunk with `format: "m4a"` (AAC), not `pcm16`. The server buffers the
+    chunk's `audioBase64`/`format` on the session and only sends it to the ASR
+    provider once `audio.commit` arrives (see below), so `pcm16` streaming chunks
+    remain supported for future real-time streaming clients.
 - `audio.commit`
   - payload: `{ "lastSeq": 42 }`
+  - Server transcribes the most recently buffered `audio.chunk` payload using
+    whichever ASR provider is configured (`ASR_PROVIDER=deepgram` or `alibaba`;
+    real transcription when credentials are configured, otherwise a labeled
+    placeholder transcript) and proceeds with the LLM reply.
+  - Alibaba Cloud NLS (`alibaba`) only accepts mono audio at 8000/16000 Hz — the
+    mobile client records 16000 Hz mono `.m4a` so it works with either provider.
 - `session.input_text`
   - payload: `{ "text": "hello teacher" }` (fallback when voice unavailable)
 - `session.stop`

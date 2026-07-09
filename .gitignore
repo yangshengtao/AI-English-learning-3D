@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .venv/
 node_modules/
+.npm-cache/
+.expo-home/
 .env
 dist/
 build/

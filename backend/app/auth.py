@@ -14,9 +14,14 @@ class AuthError(Exception):
 
 def parse_bearer_token(websocket: WebSocket) -> str:
     auth_header = websocket.headers.get("authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise AuthError("Missing bearer token.")
-    return auth_header.removeprefix("Bearer ").strip()
+    if auth_header.startswith("Bearer "):
+        return auth_header.removeprefix("Bearer ").strip()
+
+    query_token = websocket.query_params.get("token", "").strip()
+    if query_token:
+        return query_token
+
+    raise AuthError("Missing bearer token.")
 
 
 def decode_jwt(token: str) -> dict[str, Any]:

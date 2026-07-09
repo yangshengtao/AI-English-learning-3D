@@ -1,0 +1,43 @@
+---
+description: Mobile-backend integration pitfalls (Expo Go, fetch, localhost)
+globs: mobile/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# Mobile ↔ Backend Integration
+
+## HTTP methods must match backend routes
+
+`fetch(url)` defaults to **GET**. Check `backend/app/main.py` and `docs/realtime-protocol.md` before calling any API.
+
+```typescript
+// ❌ BAD — causes HTTP 405 if route is POST
+await fetch(`${baseUrl}/v1/auth/dev-token?user_id=demo-user`);
+
+// ✅ GOOD
+await fetch(`${baseUrl}/v1/auth/dev-token?user_id=demo-user`, { method: "POST" });
+```
+
+Prefer `src/services/backendApi.ts` for backend REST calls instead of inline `fetch`.
+
+## Never use localhost on physical devices
+
+```typescript
+// ❌ BAD on real iPhone
+"http://localhost:8000"
+
+// ✅ GOOD — use resolveBackendUrls() from src/config.ts
+`http://${macLanIp}:8000`
+```
+
+Do not default `app.config.ts` `extra` to localhost; use `EXPO_PUBLIC_*` env vars or runtime IP from `Constants`.
+
+## Expo SDK must match Expo Go
+
+Before changing `expo` in `package.json`, confirm Supported SDK in Expo Go (Settings). Align project SDK; document changes in `docs/troubleshooting.md`.
+
+## Smoke test after mobile/network changes
+
+1. Fetch Dev Token → `token ready`
+2. Connect → `session ready`
+3. Send Text → agent reply

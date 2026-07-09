@@ -4,6 +4,7 @@ import base64
 import time
 from dataclasses import dataclass, field
 
+from app.config import settings
 from app.models.events import EventEnvelope, OutboundEvent
 from app.providers.base import ASRProvider, LLMProvider, TTSProvider
 from app.services.evaluation import evaluate_pronunciation
@@ -16,6 +17,8 @@ class SessionState:
     mode: str = "free_talk"
     history: list[dict[str, str]] = field(default_factory=list)
     last_partial_text: str = ""
+    pending_audio_base64: str = ""
+    pending_audio_format: str = "wav"
 
 
 class SessionAgent:
@@ -43,15 +46,29 @@ class SessionAgent:
                     sessionId=event.session_id,
                     traceId=event.trace_id,
                     timestampMs=now,
-                    payload={"providerRoute": {"asr": "deepgram", "tts": "elevenlabs", "llm": "openai"}},
+                    payload={
+                        "providerRoute": {
+                            "asr": settings.asr_provider,
+                            "tts": settings.tts_provider,
+                            "llm": settings.llm_provider,
+                        }
+                    },
                 )
             )
             return events
 
         if event.type == "audio.chunk":
+            audio_base64 = event.payload.get("audioBase64", "")
+            audio_format = event.payload.get("format", "wav")
+            # Buffer the audio for the upcoming audio.commit — for the current
+            # one-shot recording flow the client sends the whole clip in a
+            # single chunk, so we simply keep the latest value.
+            state.pending_audio_base64 = audio_base64
+            state.pending_audio_format = audio_format
             transcript, confidence = await self.asr.transcribe_chunk(
-                event.payload.get("audioBase64", ""),
+                audio_base64,
                 is_final=False,
+                audio_format=audio_format,
             )
             state.last_partial_text = transcript
             events.append(
@@ -66,7 +83,12 @@ class SessionAgent:
             return events
 
         if event.type == "audio.commit":
-            learner_text, confidence = await self.asr.transcribe_chunk("committed", is_final=True)
+            learner_text, confidence = await self.asr.transcribe_chunk(
+                state.pending_audio_base64,
+                is_final=True,
+                audio_format=state.pending_audio_format,
+            )
+            state.pending_audio_base64 = ""
             events.append(
                 OutboundEvent(
                     type="asr.final",

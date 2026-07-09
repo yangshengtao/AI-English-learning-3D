@@ -5,7 +5,9 @@ from abc import ABC, abstractmethod
 
 class ASRProvider(ABC):
     @abstractmethod
-    async def transcribe_chunk(self, audio_base64: str, *, is_final: bool = False) -> tuple[str, float]:
+    async def transcribe_chunk(
+        self, audio_base64: str, *, is_final: bool = False, audio_format: str = "wav"
+    ) -> tuple[str, float]:
         raise NotImplementedError
 
 
