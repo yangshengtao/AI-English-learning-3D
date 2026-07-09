@@ -24,6 +24,8 @@ class DeepgramTTSProvider(TTSProvider):
 
     def __init__(self) -> None:
         self.sample_rate = settings.deepgram_tts_sample_rate
+        # Reused across requests — see DeepgramASRProvider for why.
+        self._client = httpx.AsyncClient(timeout=20.0)
 
     async def synthesize(self, text: str) -> bytes:
         trimmed = text.strip()
@@ -41,15 +43,14 @@ class DeepgramTTSProvider(TTSProvider):
             "sample_rate": str(self.sample_rate),
         }
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    settings.deepgram_tts_base_url,
-                    params=params,
-                    headers={"Authorization": f"Token {api_key}", "Content-Type": "application/json"},
-                    json={"text": trimmed},
-                )
-                response.raise_for_status()
-                return response.content
+            response = await self._client.post(
+                settings.deepgram_tts_base_url,
+                params=params,
+                headers={"Authorization": f"Token {api_key}", "Content-Type": "application/json"},
+                json={"text": trimmed},
+            )
+            response.raise_for_status()
+            return response.content
         except httpx.HTTPError as exc:
             return f"DEEPGRAM_TTS_ERROR::{exc}".encode("utf-8")
 

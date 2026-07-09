@@ -125,6 +125,18 @@ Mac 查 IP：`ipconfig getifaddr en0`
 - **解决**：只在录音停止后重置一次不够可靠，必须在**每次真正播放之前**都重新显式调用一次 `Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true })`，才能把输出强制拉回扬声器。现在 `audioPlayer.ts`（云端音频播放前）和 `textToSpeech.ts`（本地 `expo-speech` 朗读前）都各自加了这一步，`audioRecorder.ts` 里录音结束后的重置作为兜底保留。
 - **预防**：以后任何新的播放入口（录音/朗读/铃声等），只要项目里用过 `allowsRecordingIOS: true`，播放前都要重新 assert 一次 `allowsRecordingIOS: false`，不要假设录音结束时设一次就能一直生效。
 
+## 点击 Stop Recording 后要等 5 秒多才播放，延迟太高
+
+- **现象**：语音对话每一轮从点击「⏹ Stop & Send」到听到回复，要等 5 秒以上。
+- **排查思路**：`audio.commit` 这一轮实际上是 ASR（Deepgram/Alibaba）→ LLM（DeepSeek）→ TTS（Deepgram Aura-2）三次外部 API 依次串行调用，延迟必然是三段耗时之和，无法并行（LLM 需要 ASR 的文字，TTS 需要 LLM 的文字）。
+- **已做的优化**（`backend/app/orchestrator/session_agent.py`、`backend/app/providers/*.py`）：
+  1. **复用 HTTP 连接**：三个 Provider（ASR/LLM/TTS）之前都是每次请求 `async with httpx.AsyncClient(...)`，即每轮对话都要重新做 3 次 TCP+TLS 握手；改成在 Provider 初始化时创建一个长期复用的 `httpx.AsyncClient`，后续请求走 keep-alive 连接，省掉重复握手（每次大约省下 100~500ms，三次调用能省 0.3~1.5s）。
+  2. **改成流式发送，而不是等全部做完再一起发**：以前 `session_agent.handle()` 把 `asr.final`/`agent.text`/`agent.audio` 全部收集到一个列表里，等 ASR+LLM+TTS **全部**跑完才一次性发给客户端；现在改成每算完一步就立刻 `emit()` 发出去（`asr.final` 一算完就发、`agent.text` 一算完就发，不等 TTS）。这样虽然音频到达的总耗时不会变，但文字回复会明显提前出现，感知上不会像之前那样"卡住不动 5 秒"。
+  3. **加计时日志**：`audio.commit` 处理完一轮后会打一行 `voice turn timing session=... asr=Xs llm=Ys tts=Zs total=Ws`（`journalctl -u ai-english-backend -f` 可看到），后续如果还慢可以直接看是哪一段拖慢的，而不是靠猜。
+- **如果优化后仍然感觉慢，下一步可以做**：
+  - 看日志里 asr/llm/tts 哪一段耗时最大——如果是 LLM，说明是 DeepSeek 生成慢，可以考虑换更快的模型或改成流式生成边生成边分句合成语音（工程量较大）；如果是 ASR/TTS，通常是服务器到 Deepgram 的跨境网络延迟，换一个离 Deepgram 更近的服务器区域会更明显。
+  - 缩短 System Prompt 里要求的回复长度（当前 `max_tokens=200`，已经不算长）。
+
 ## Agent 语音听起来生硬、不够"标准美音"
 
 - **原因**：早期 `TTS_PROVIDER=elevenlabs`/`azure` 都只是占位代码（`ElevenLabsTTSProvider`/`AzureTTSProvider` 从不真正调用云端 API，只返回带标记的假字节），手机端检测到占位字节会跳过播放，实际听到的声音全部来自**手机本地系统 TTS**（`expo-speech` → iOS `AVSpeechSynthesizer`），音质天然比不上云端神经网络 TTS。

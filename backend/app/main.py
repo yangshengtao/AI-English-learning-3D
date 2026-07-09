@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -15,6 +16,8 @@ from app.providers.factory import build_asr_provider, build_llm_provider, build_
 # Use bootcdn (accessible in China) instead of jsdelivr for Swagger UI assets
 SWAGGER_JS_URL = "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.11.0/swagger-ui-bundle.js"
 SWAGGER_CSS_URL = "https://cdn.bootcdn.net/ajax/libs/swagger-ui/5.11.0/swagger-ui.css"
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title=settings.app_name, docs_url=None)
 
@@ -69,13 +72,14 @@ async def realtime_session(websocket: WebSocket) -> None:
         await websocket.close(code=4401)
         return
 
+    async def emit(item: OutboundEvent) -> None:
+        await websocket.send_json(item.model_dump(by_alias=True))
+
     try:
         while True:
             raw = await websocket.receive_json()
             event = EventEnvelope.model_validate(raw)
-            responses = await session_agent.handle(event)
-            for item in responses:
-                await websocket.send_json(item.model_dump(by_alias=True))
+            await session_agent.handle(event, emit)
     except WebSocketDisconnect:
         return
     except Exception as exc:  # pragma: no cover - safety net

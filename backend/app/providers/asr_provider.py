@@ -46,6 +46,12 @@ class DeepgramASRProvider(ASRProvider):
     call needs a real transcription.
     """
 
+    def __init__(self) -> None:
+        # Reused across requests so repeat calls hit Deepgram over a warm
+        # keep-alive connection instead of paying a fresh TCP+TLS handshake
+        # (~200-500ms round trip to Deepgram) on every turn.
+        self._client = httpx.AsyncClient(timeout=20.0)
+
     async def transcribe_chunk(
         self, audio_base64: str, *, is_final: bool = False, audio_format: str = "wav"
     ) -> tuple[str, float]:
@@ -68,15 +74,14 @@ class DeepgramASRProvider(ASRProvider):
         params = {"model": settings.deepgram_model, "smart_format": "true", "language": "en"}
 
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    settings.deepgram_base_url,
-                    params=params,
-                    headers={"Authorization": f"Token {api_key}", "Content-Type": content_type},
-                    content=audio_bytes,
-                )
-                response.raise_for_status()
-                payload = response.json()
+            response = await self._client.post(
+                settings.deepgram_base_url,
+                params=params,
+                headers={"Authorization": f"Token {api_key}", "Content-Type": content_type},
+                content=audio_bytes,
+            )
+            response.raise_for_status()
+            payload = response.json()
             alternative = payload["results"]["channels"][0]["alternatives"][0]
             transcript = str(alternative.get("transcript", "")).strip()
             confidence = float(alternative.get("confidence", 0.0))
@@ -145,6 +150,7 @@ class AlibabaASRProvider(ASRProvider):
     def __init__(self) -> None:
         self._token: str | None = None
         self._token_expires_at: float = 0.0
+        self._client = httpx.AsyncClient(timeout=20.0)
 
     def _is_configured(self) -> bool:
         return not any(
@@ -170,10 +176,9 @@ class AlibabaASRProvider(ASRProvider):
         }
         params["Signature"] = _sign_alibaba_request(params, settings.alibaba_access_key_secret)
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(settings.alibaba_token_base_url, params=params)
-            response.raise_for_status()
-            payload = response.json()
+        response = await self._client.get(settings.alibaba_token_base_url, params=params, timeout=10.0)
+        response.raise_for_status()
+        payload = response.json()
 
         token_info = payload["Token"]
         self._token = str(token_info["Id"])
@@ -211,21 +216,20 @@ class AlibabaASRProvider(ASRProvider):
 
         try:
             token = await self._get_token()
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    settings.alibaba_asr_base_url,
-                    params={
-                        "appkey": settings.alibaba_app_key,
-                        "format": nls_format,
-                        "sample_rate": settings.alibaba_sample_rate,
-                        "enable_punctuation_prediction": "true",
-                        "enable_inverse_text_normalization": "true",
-                    },
-                    headers={"X-NLS-Token": token, "Content-Type": "application/octet-stream"},
-                    content=audio_bytes,
-                )
-                response.raise_for_status()
-                payload = response.json()
+            response = await self._client.post(
+                settings.alibaba_asr_base_url,
+                params={
+                    "appkey": settings.alibaba_app_key,
+                    "format": nls_format,
+                    "sample_rate": settings.alibaba_sample_rate,
+                    "enable_punctuation_prediction": "true",
+                    "enable_inverse_text_normalization": "true",
+                },
+                headers={"X-NLS-Token": token, "Content-Type": "application/octet-stream"},
+                content=audio_bytes,
+            )
+            response.raise_for_status()
+            payload = response.json()
 
             if int(payload.get("status", 0)) != ALIBABA_SUCCESS_STATUS:
                 return f"[Alibaba NLS error: {payload.get('message', payload)}]", 0.0

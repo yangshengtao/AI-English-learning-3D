@@ -37,6 +37,10 @@ class DeepSeekLLMProvider(LLMProvider):
     pipeline keeps working during local development.
     """
 
+    def __init__(self) -> None:
+        # Reused across requests — see DeepgramASRProvider for why.
+        self._client = httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=20.0)
+
     async def reply(self, *, learner_text: str, history: list[dict[str, str]], mode: str) -> str:
         api_key = settings.deepseek_api_key
         if _is_placeholder_key(api_key):
@@ -52,19 +56,18 @@ class DeepSeekLLMProvider(LLMProvider):
         )
 
         try:
-            async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=20.0) as client:
-                response = await client.post(
-                    "/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": settings.deepseek_model,
-                        "messages": messages,
-                        "temperature": 0.7,
-                        "max_tokens": 200,
-                    },
-                )
-                response.raise_for_status()
-                payload = response.json()
+            response = await self._client.post(
+                "/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": settings.deepseek_model,
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": 200,
+                },
+            )
+            response.raise_for_status()
+            payload = response.json()
             content = payload["choices"][0]["message"]["content"]
             return str(content).strip()
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
