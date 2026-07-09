@@ -118,6 +118,13 @@ Mac 查 IP：`ipconfig getifaddr en0`
 - **解决**：加了一个 `expectAudioReplyRef` 标记区分两种对话路径——语音录音（`audio.commit`）预期后面会有 `agent.audio`，收到 `agent.text` 先不朗读，等 `agent.audio` 到了再播云端音频；只有云端音频是占位/失败时才回退到手机本地朗读兜底。文字对话（`session.input_text`）从来不会有 `agent.audio`，收到 `agent.text` 照常立刻本地朗读，不受影响。
 - **预防**：以后如果给 `agent.text`/`agent.audio` 任一路径加新的自动播放逻辑，注意两者是同一次对话的一体两面，不要让两条链路各自无条件地触发播放。
 
+## 播放音量特别小，手机音量调到最大也没用
+
+- **现象**：录过一次音之后，无论是云端 TTS 播放（`audioPlayer.ts`）还是本地朗读兜底（`textToSpeech.ts`），声音都变得很小，物理音量键调到最大也没什么变化。
+- **原因**：这是 iOS/`expo-av` 的一个经典坑（[expo#19220](https://github.com/expo/expo/issues/19220)、[expo#9915](https://github.com/expo/expo/issues/9915)）。只要调用过 `Audio.setAudioModeAsync({ allowsRecordingIOS: true })` 开始录音，iOS 就会把 AVAudioSession 切到 `PlayAndRecord` 分类；之后即使把 `allowsRecordingIOS` 设回 `false`，输出路由也可能仍然停留在**耳机受话口（earpiece）**而不是主扬声器——受话口本身物理最大音量就很低，所以调系统音量条完全没用。
+- **解决**：只在录音停止后重置一次不够可靠，必须在**每次真正播放之前**都重新显式调用一次 `Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true })`，才能把输出强制拉回扬声器。现在 `audioPlayer.ts`（云端音频播放前）和 `textToSpeech.ts`（本地 `expo-speech` 朗读前）都各自加了这一步，`audioRecorder.ts` 里录音结束后的重置作为兜底保留。
+- **预防**：以后任何新的播放入口（录音/朗读/铃声等），只要项目里用过 `allowsRecordingIOS: true`，播放前都要重新 assert 一次 `allowsRecordingIOS: false`，不要假设录音结束时设一次就能一直生效。
+
 ## Agent 语音听起来生硬、不够"标准美音"
 
 - **原因**：早期 `TTS_PROVIDER=elevenlabs`/`azure` 都只是占位代码（`ElevenLabsTTSProvider`/`AzureTTSProvider` 从不真正调用云端 API，只返回带标记的假字节），手机端检测到占位字节会跳过播放，实际听到的声音全部来自**手机本地系统 TTS**（`expo-speech` → iOS `AVSpeechSynthesizer`），音质天然比不上云端神经网络 TTS。

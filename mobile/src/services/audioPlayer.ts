@@ -116,9 +116,22 @@ export async function playPcm16Audio(
     });
 
     await unloadCurrentSound();
-    await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+    // iOS pins audio output to the quiet earpiece receiver (not the main
+    // speaker) after any recording session, no matter what the hardware
+    // volume buttons are set to, until allowsRecordingIOS is explicitly set
+    // back to false immediately before the next playback — see
+    // https://github.com/expo/expo/issues/19220. Re-asserting it here (not
+    // just once in stopRecording) is what actually makes it stick.
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+    });
 
-    const { sound } = await Audio.Sound.createAsync({ uri: fileUri }, { shouldPlay: true });
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: fileUri },
+      { shouldPlay: true, volume: 1.0 },
+    );
     currentSound = sound;
     sound.setOnPlaybackStatusUpdate((playbackStatus) => {
       if (playbackStatus.isLoaded && playbackStatus.didJustFinish) {

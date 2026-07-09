@@ -71,7 +71,11 @@ export async function startRecording(): Promise<Audio.Recording> {
 
 export async function stopRecording(recording: Audio.Recording): Promise<RecordedAudio> {
   await recording.stopAndUnloadAsync();
-  await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+  // Belt-and-suspenders reset — the authoritative reset that actually fixes
+  // iOS earpiece-routing lives right before playback (see audioPlayer.ts /
+  // textToSpeech.ts), but flipping this back immediately here too avoids a
+  // window where some other code could play audio before that point.
+  await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
 
   const uri = recording.getURI();
   if (!uri) {
